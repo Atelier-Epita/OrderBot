@@ -1,0 +1,14 @@
+[Unit]
+Description=OrderBot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=Eduardo
+WorkingDirectory=/home/Eduardo/OrderBot
+ExecStart=/usr/bin/python3 -m orderbot
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -16,7 +16,8 @@ pip install -e .
 cp .env.example .env
 ```
 
-Then add in your tokens for discord and github
+Then add in your tokens for discord and github.
+be carefull to not push those tokens to github.
 
 ### add the service
 

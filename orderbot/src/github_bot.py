@@ -1,48 +1,203 @@
 import json
-import requests
 import logging
 
+from gql import Client, gql
+from gql.transport.aiohttp import AIOHTTPTransport
+
+
 class GithubBot():
-    def __init__(self, owner, repo, project_id, token):
-        self.owner = owner
+    def __init__(self, org, repo, token):
+        self.org = org
         self.repo = repo
-        self.project_id = project_id 
-        self.__headers = {"Authorization": f"Token {token}"}
+        self.column_ids = {}
+        transport = AIOHTTPTransport(
+            url="https://api.github.com/graphql",
+            headers={
+                "Authorization": f"token {token}",
+            },
+        )
+        self.client = Client(transport=transport,
+                             fetch_schema_from_transport=True)
 
-    def post(self, url, data):
-        ret = requests.post(url, json=data, headers=self.__headers)
-        if ret.status_code != 201:
-            logging.error(f"{ret.status_code} {ret.text}")
-        return ret
+    async def fetch_projectv2(self, number:int):
+        # fetch the project in the organization
+        query = gql(
+            """
+            query ($login: String!, $number: Int!) {
+                organization(login: $login) {
+                    projectV2(number: $number) {
+                        id
+                    }
+                }
+            }
+            """
+        )
 
-    def get(self, url):
-        ret = requests.get(url, headers=self.__headers)
-        if ret.status_code != 200:
-            logging.error(f"{ret.status_code} {ret.text}")
-        return ret
+        response = await self.client.execute_async(
+            query,
+            variable_values={
+                "login": self.org,
+                "number": number,
+            },
+        )
 
-    def get_column_id(self, column_name):
-        url = f"https://api.github.com/projects/{self.project_id}/columns"
-        response = self.get(url)
-        columns = response.json()
-        for column in columns:
-            if column["name"] == column_name:
-                return column["id"]
-        logging.error(f"Column {column_name} not found")
+        logging.info(f"Projects: {response}")
 
-    def create_issue(self, title, body, template, column_name, fields: dict):
-        # Get the column id
-        column_id = self.get_column_id(column_name)
+    async def fetch_projectv2_fields(self, number):
+        # fetch the project in the organization and its fields and custom fields
+        query = gql(
+            """
+            query ($login: String!, $number: Int!) {
+                organization(login: $login) {
+                    projectV2(number: $number) {
+                        id
+                        number
+                        fields(first: 100) {
+                            nodes { ... on ProjectV2FieldCommon {
+                                name
+                                dataType
+                                databaseId
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            """
+        )
 
-        # create the issue using a template
-        issue_url = f"https://api.github.com/repos/{owner}/{repo}/issues"
-        data = {"title": issue_title, "body": issue_body, "template": template}.update(fields)
-        response = self.post(issue_url, data)
-        issue_number = response.json()["number"]
+        response = await self.client.execute_async(
+            query,
+            variable_values={
+                "login": self.org,
+                "number": int(number),
+            },
+        )
+        return response
 
-        # Add the issue to the project column
-        card_url = f"https://api.github.com/projects/columns/{column_id}/cards"
-        card_data = {"content_id": issue_number, "content_type": "Issue"}
-        response = self.post(card_url, card_data)
+    async def fetch_repo(self, name):
+        # fetch the repository in the organization
+        query = gql(
+            """
+            query ($login: String!, $name: String!) {
+                organization(login: $login) {
+                    repository(name: $name) {
+                        id
+                    }
+                }
+            }
+            """
+        )
 
-        logging.info(f"Issue {issue_number} created and inserted in column {column_id}")
+        response = await self.client.execute_async(
+            query,
+            variable_values={
+                "login": self.org,
+                "name": name,
+            },
+        )
+        return response
+
+    async def fetch_issue(self, repo_name, title):
+        # fetch the issue in the repository
+        query = gql(
+            """
+            query ($login: String!, $name: String!, $title: String!) {
+                organization(login: $login) {
+                    repository(name: $name) {
+                        issue(title: $title) {
+                            id
+                        }
+                    }
+                }
+            }
+            """
+        )
+
+        response = await self.client.execute_async(
+            query,
+            variable_values={
+                "login": self.org,
+                "name": repo_name,
+                "title": title,
+            },
+        )
+        return response
+
+    async def create_issue(self, title, body, project_number):
+        project = await self.fetch_projectv2_fields(project_number)
+        repo = await self.fetch_repo(self.repo)
+
+
+        # create the issue
+        query = gql(
+            """
+            mutation ($title: String!, $body: String!, $repositoryId: ID!) {
+                createIssue(input: {title: $title, body: $body, repositoryId: $repositoryId}) {
+                    issue {
+                        id
+                        number
+                    }
+                }
+            }
+            """
+        )
+
+        issue = await self.client.execute_async(
+            query,
+            variable_values={
+                "title": title,
+                "body": body,
+                "repositoryId": repo["organization"]["repository"]["id"],
+            }
+        )
+
+        # add the issue to the project
+        query = gql(
+            """
+            mutation ($contentId: ID!, $projectId: ID!) {
+                addProjectV2ItemById(input: {contentId: $contentId, projectId: $projectId}) {
+                    clientMutationId
+                }
+            }
+            """
+        )
+
+        # create the card associated with the issue
+        card = await self.client.execute_async(
+            query,
+            variable_values={
+                "contentId": issue["createIssue"]["issue"]["id"],
+                "projectId": project["organization"]["projectV2"]["id"],
+            }
+        )
+
+        return issue
+
+    async def add_issue_comment(self):
+        # TODO test this
+        try:
+            issue_id = self.fetch_issue(self.repo, self.title)["organization"]["repository"]["issue"]["id"]
+        except KeyError:
+            logging.error("Issue not found")
+            return
+
+        query = gql(
+            """
+            mutation ($body: String!, $subjectId: ID!) {
+                addComment(input: {body: $body, subjectId: $subjectId}) {
+                    clientMutationId
+                }
+            }
+            """
+        )
+
+        response = await self.client.execute_async(
+            query,
+            variable_values={
+                "body": self.body,
+                "subjectId": issue_id,
+            },
+        )
+
+        return response

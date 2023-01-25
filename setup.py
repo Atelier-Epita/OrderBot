@@ -8,7 +8,7 @@ setup(
     packages=["orderbot"],
     install_requires=[
         "discord.py",
-        "requests",
+        "gql",
         "python-dotenv",
     ],
     extras_require={

@@ -25,7 +25,7 @@ class DiscordBot(discord.Client):
 
     async def create_thread_issue(self, message):
         # create a new issue on github
-        await self.github_bot.create_issue(f"{message.channel.name} - {message.author}", message.content, os.getenv("GITHUB_PROJECT_NUMBER"))
+        await self.github_bot.create_issue(f"{message.channel.name} - {message.author.display_name}", f"[{message.author}]" + message.content, os.getenv("GITHUB_PROJECT_NUMBER"))
 
         # create thread
         thread = await message.create_thread(name=message.author.display_name)

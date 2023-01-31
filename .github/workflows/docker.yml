@@ -1,0 +1,23 @@
+name: Docker Image CI
+
+on:
+  push:
+    tags:
+    - '*'
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build the Docker image
+      run: docker build . --file Dockerfile --tag rg.nl-ams.scw.cloud/atelier/orderbot:latest
+    - name: Push docker image
+      run: |
+        docker login rg.nl-ams.scw.cloud/atelier -u nologin --password-stdin <<< "$SCW_SECRET_KEY"
+        docker push rg.nl-ams.scw.cloud/atelier/orderbot:latest
+      env:
+        SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}

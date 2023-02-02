@@ -209,7 +209,7 @@ class GithubBot():
             issue = await self.fetch_issue_by_number(self.repo, number)
             issue_id = issue["organization"]["repository"]["issue"]["id"]
         except KeyError:
-            logging.error("Issue not found")
+            logging.error(f"Issue {number} not found")
             return
 
         # add the comment to the issue
@@ -233,3 +233,32 @@ class GithubBot():
 
         logging.info(f"Added Github comment: {body} in issue {number}")
         return comment
+
+    async def close_issue(self, number):
+        try:
+            issue = await self.fetch_issue_by_number(self.repo, number)
+            issue_id = issue["organization"]["repository"]["issue"]["id"]
+        except KeyError:
+            logging.error(f"Issue {number} not found")
+            return
+
+        # close the issue
+        query = gql(
+            """
+            mutation ($issueId: ID!) {
+                closeIssue(input: {issueId: $issueId}) {
+                    clientMutationId
+                }
+            }
+            """
+        )
+
+        close = await self.client.execute_async(
+            query,
+            variable_values={
+                "issueId": issue_id,
+            }
+        )
+
+        logging.info(f"Closed issue {number}")
+        return close

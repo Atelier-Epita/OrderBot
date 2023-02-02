@@ -17,28 +17,35 @@ class DiscordBot(discord.Client):
         self.token = token
         self.github_bot = github_bot
 
-    def repr_message(self, message):
-        return f"Message: {message.content} from {message.author} in {message.channel} at {message.created_at} with {message.reactions} reactions"
-    
     def run(self):
         super().run(self.token)
 
+    def repr_message(self, message):
+        return f"Message: {message.content} from {message.author} in {message.channel} at {message.created_at} with {message.reactions} reactions"
+
     async def create_thread_issue(self, message):
         # create a new issue on github
-        await self.github_bot.create_issue(f"{message.channel.name} - {message.author.display_name}", f"[{message.author}]" + message.content, os.getenv("GITHUB_PROJECT_NUMBER"))
+        issue = await self.github_bot.create_issue(f"{message.channel.name} - {message.author.display_name}", f"[{message.author}]" + message.content, os.getenv("GITHUB_PROJECT_NUMBER"))
 
         # create thread
-        thread = await message.create_thread(name=message.author.display_name)
-        await thread.send("Issue created, please wait for a staff member to respond")
+        issue_number = issue["createIssue"]["issue"]["number"]
+        thread = await message.create_thread(name=f"{message.author.display_name} #{issue.number}")
+        # await thread.send("Issue created, please wait for a staff member to respond")
+
+        logging.info(f"Created issue #{issue_number} for {message.author} in {message.channel.name}")
 
     async def on_ready(self, *args, **kwargs):
-        logging.debug(f"We have logged in as {self.user}")
+        logging.info(f"We have logged in as {self.user}")
 
     async def on_message(self, message: discord.Message):
         logging.debug(self.repr_message(message))
 
         # avoid bot replying to itself
         if message.author == self.user:
+            return
+
+        # only reply to authorized users (to be defined later)
+        if "Bureau" not in [r.name for r in message.author.roles]:
             return
 
         # check if the message is a command
@@ -57,20 +64,21 @@ class DiscordBot(discord.Client):
                 # send an error message
                 await message.channel.send("Invalid command")
 
+        channel = message.channel.name
+        if "#" in channel:
+            issue_number = int(channel.split("#")[-1])
+            await self.github_bot.add_issue_comment(issue_number, f"[{message.author}] - {message.content}")
+
     # on reaction
     async def on_message_edit(self, before, after):
         logging.debug(f"Message edited: {before} -> {after}")
         await self.on_message(after)
 
     async def on_raw_reaction_add(self, payload):
-        logging.debug(f"Raw reaction added: {payload}")
-
         reaction = payload.emoji
         channel = self.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
         user = self.get_user(payload.user_id)
-
-        print(f"Reaction: {reaction} from {user} in {channel} at {message.created_at} with {message.reactions} reactions")
 
         if payload.emoji.name == "🧵":
             await self.create_thread_issue(message)

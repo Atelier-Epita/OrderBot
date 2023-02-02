@@ -4,6 +4,8 @@ import logging
 from gql import Client, gql
 from gql.transport.aiohttp import AIOHTTPTransport
 
+logging.getLogger("gql").setLevel(logging.WARNING)
+
 
 class GithubBot():
     def __init__(self, org, repo, token):
@@ -98,7 +100,7 @@ class GithubBot():
         )
         return response
 
-    async def fetch_issue(self, repo_name, title):
+    async def fetch_issue_by_name(self, repo_name, title):
         # fetch the issue in the repository
         query = gql(
             """
@@ -120,6 +122,32 @@ class GithubBot():
                 "login": self.org,
                 "name": repo_name,
                 "title": title,
+            },
+        )
+        return response
+
+    async def fetch_issue_by_number(self, repo_name, number):
+        # fetch the issue in the repository
+        query = gql(
+            """
+            query ($login: String!, $name: String!, $number: Int!) {
+                organization(login: $login) {
+                    repository(name: $name) {
+                        issue(number: $number) {
+                            id
+                        }
+                    }
+                }
+            }
+            """
+        )
+
+        response = await self.client.execute_async(
+            query,
+            variable_values={
+                "login": self.org,
+                "name": repo_name,
+                "number": int(number),
             },
         )
         return response
@@ -172,16 +200,19 @@ class GithubBot():
             }
         )
 
+        logging.info(f"Created issue {issue['createIssue']['issue']['number']}")
+
         return issue
 
-    async def add_issue_comment(self):
-        # TODO test this
+    async def add_issue_comment(self, number, body):
         try:
-            issue_id = self.fetch_issue(self.repo, self.title)["organization"]["repository"]["issue"]["id"]
+            issue = await self.fetch_issue_by_number(self.repo, number)
+            issue_id = issue["organization"]["repository"]["issue"]["id"]
         except KeyError:
             logging.error("Issue not found")
             return
 
+        # add the comment to the issue
         query = gql(
             """
             mutation ($body: String!, $subjectId: ID!) {
@@ -192,12 +223,13 @@ class GithubBot():
             """
         )
 
-        response = await self.client.execute_async(
+        comment = await self.client.execute_async(
             query,
             variable_values={
-                "body": self.body,
+                "body": body,
                 "subjectId": issue_id,
-            },
+            }
         )
 
-        return response
+        logging.info(f"Added Github comment: {body} in issue {number}")
+        return comment

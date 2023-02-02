@@ -1,13 +1,15 @@
-from .src import github_bot
-from .src import discord_bot
-import os
-from dotenv import load_dotenv
 import logging
+import os
+
+from dotenv import load_dotenv
+
+from .src import discord_bot, github_bot
 
 # write to file with time and level
 logging.basicConfig(
-    filename='orderbot.log',
-    filemode='w',
+    handlers=[
+        logging.FileHandler("orderbot.log", mode="w"),
+    ],
     format='[%(asctime)s][%(levelname)s][%(message)s]',
     datefmt='%d-%b-%y %H:%M:%S',
     level=logging.DEBUG

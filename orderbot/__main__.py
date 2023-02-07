@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 
 from dotenv import load_dotenv
 
@@ -9,6 +10,7 @@ from .src import discord_bot, github_bot
 logging.basicConfig(
     handlers=[
         logging.FileHandler("orderbot.log", mode="w"),
+        logging.StreamHandler(sys.stdout)
     ],
     format='[%(asctime)s][%(levelname)s][%(message)s]',
     datefmt='%d-%b-%y %H:%M:%S',
